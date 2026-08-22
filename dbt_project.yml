@@ -1,0 +1,70 @@
+name: 'thelook_analytics'
+version: '1.0.0'
+config-version: 2
+
+profile: 'thelook_analytics'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# ---------------------------------------------------------------------------
+# Project-wide variables
+# ---------------------------------------------------------------------------
+# thelook_ecommerce is a *simulated* dataset that generates orders into the
+# future. We clamp to "today" so metrics are not polluted by future-dated rows.
+vars:
+  # Ignore anything created before this date (dataset has a long thin tail)
+  analysis_start_date: '2019-01-01'
+  # Rolling window used for the "is this customer active?" definition
+  active_window_days: 90
+  # The completeness boundary is DERIVED in fct_orders (see that model), not
+  # set here -- the observed ingestion lag drifts, so any fixed offset needs
+  # hand-tuning on some future run.
+  #
+  # This is an ALARM bound, not a business boundary: if the incomplete window
+  # ever exceeds this many days, either the generator has stalled or an old
+  # orphan order has dragged the boundary backwards across good data. Being
+  # slightly wrong about this number is cheap; being wrong about a hard-coded
+  # cutoff was not.
+  max_completeness_window_days: 14
+  # Order item statuses that count toward recognised revenue
+  revenue_statuses: ['Complete', 'Shipped', 'Processing']
+
+models:
+  thelook_analytics:
+    +persist_docs:
+      relation: true
+      columns: true
+
+    utilities:
+      +materialized: table
+      +schema: utilities
+
+    staging:
+      +materialized: view
+      +schema: staging
+
+    intermediate:
+      +materialized: ephemeral
+      +schema: intermediate
+
+    marts:
+      +materialized: table
+      core:
+        +schema: core
+      finance:
+        +schema: finance
+      marketing:
+        +schema: marketing
+
+seeds:
+  thelook_analytics:
+    +schema: seeds

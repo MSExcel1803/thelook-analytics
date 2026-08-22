@@ -1,0 +1,178 @@
+version: 2
+
+models:
+  - name: stg_thelook__users
+    description: >
+      One row per registered customer, cleaned. Names title-cased, email lowered,
+      blank strings nulled, an age band derived for cohorting, and future-dated
+      registrations (an artefact of the simulated generator) removed.
+    columns:
+      - name: user_id
+        description: Primary key.
+        tests: [unique, not_null]
+      - name: email
+        description: Lower-cased email. PII — do not expose in public dashboards.
+        tests: [not_null]
+      - name: age_band
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['18-24', '25-34', '35-44', '45-54', '55-64', '65+']
+      - name: gender
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['M', 'F']
+      - name: traffic_source
+        description: Self-reported acquisition channel at registration.
+      - name: registered_at
+        tests: [not_null]
+
+  - name: stg_thelook__orders
+    description: >
+      One row per order header. Adds boolean status flags and fulfilment
+      durations. Future-dated orders excluded.
+    columns:
+      - name: order_id
+        tests: [unique, not_null]
+      - name: user_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_thelook__users')
+                field: user_id
+      - name: order_status
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Complete', 'Shipped', 'Processing', 'Cancelled', 'Returned']
+      - name: is_revenue_recognised
+        description: >
+          True when the order is in a state we count toward revenue. Cancelled
+          and Returned are excluded — this is the single definition of
+          "did this order count".
+      - name: items_ordered
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                inclusive: true
+      - name: days_to_ship
+        description: Null until the order ships. Never negative — enforced below.
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: true
+              config:
+                where: "days_to_ship is not null"
+  - name: stg_thelook__order_items
+    description: >
+      One row per physical unit sold — the revenue grain of the warehouse.
+    columns:
+      - name: order_item_id
+        tests: [unique, not_null]
+      - name: order_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_thelook__orders')
+                field: order_id
+      - name: product_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_thelook__products')
+                field: product_id
+      - name: inventory_item_id
+        tests:
+          - relationships:
+              arguments:
+                to: ref('stg_thelook__inventory_items')
+                field: inventory_item_id
+      - name: sale_price
+        description: USD actually paid for this unit.
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: true
+      - name: item_status
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Complete', 'Shipped', 'Processing', 'Cancelled', 'Returned']
+
+  - name: stg_thelook__products
+    description: Product catalogue with list-price economics.
+    columns:
+      - name: product_id
+        tests: [unique, not_null]
+      - name: sku
+        tests: [not_null]
+      - name: category
+        tests: [not_null]
+      - name: department
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Men', 'Women']
+      - name: list_price
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: false
+      - name: list_margin_pct
+        description: (retail - cost) / retail. Sanity-bounded between -1 and 1.
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -1
+                max_value: 1
+              config:
+                where: "list_margin_pct is not null"
+  - name: stg_thelook__inventory_items
+    description: >
+      One row per physical unit ever stocked. Source of true COGS.
+    columns:
+      - name: inventory_item_id
+        tests: [unique, not_null]
+      - name: product_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_thelook__products')
+                field: product_id
+      - name: unit_cost
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: true
+  - name: stg_thelook__distribution_centers
+    description: Warehouse locations.
+    columns:
+      - name: distribution_center_id
+        tests: [unique, not_null]
+      - name: distribution_center_name
+        tests: [not_null, unique]
+
+  - name: stg_thelook__events
+    description: >
+      Clickstream events, cleaned. Used for session-level traffic attribution
+      rather than the self-reported traffic_source on the user record.
+    columns:
+      - name: event_id
+        tests: [unique, not_null]
+      - name: event_type
+        tests: [not_null]
+      - name: session_id
+        tests: [not_null]

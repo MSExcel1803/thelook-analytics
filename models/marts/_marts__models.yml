@@ -1,0 +1,276 @@
+version: 2
+
+models:
+  # ---------------------------------------------------------------- core ----
+  - name: fct_orders
+    description: >
+      **Grain: one order.** The primary fact table for order-level analysis.
+      Carries status flags, order sequencing and cohort assignment, line-item
+      economics rolled up from `fct_order_items`, and fulfilment durations.
+      Dashboards should read this, never the raw source.
+    columns:
+      - name: order_id
+        description: Primary key.
+        tests: [unique, not_null]
+      - name: user_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: user_id
+      - name: order_status
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Complete', 'Shipped', 'Processing', 'Cancelled', 'Returned']
+      - name: is_revenue_recognised
+        description: Canonical "did this order count" flag. See project README.
+        tests: [not_null]
+      - name: has_line_items
+        description: >
+          False when an order header exists with no matching order_items rows.
+          In this source that only happens at the trailing edge, where headers
+          are written before their line items.
+        tests: [not_null]
+      - name: is_revenue_complete
+        description: >
+          False for orders on or after the first date that still has an order
+          missing its line items -- the derived completeness boundary. Their
+          economics are not yet fully written. Filter on this before reporting
+          revenue.
+        tests: [not_null]
+      - name: net_revenue
+        description: >
+          Revenue after excluding cancelled and returned units. **This is the
+          definition of revenue** for the whole project. Null for orders whose
+          line items have not landed yet -- deliberately null rather than zero,
+          so incomplete orders cannot be mistaken for genuine zero-revenue ones.
+        tests:
+          - not_null:
+              config:
+                where: "is_revenue_complete"
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: true
+      - name: net_gross_profit
+        description: net_revenue - net_cogs, using true landed unit cost.
+      - name: purchase_seq
+        description: 1 for a customer's first recognised purchase, null if not recognised.
+      - name: cohort_month
+        description: Month of the customer's first recognised purchase.
+      - name: ordered_date
+        tests: [not_null]
+
+  - name: fct_order_items
+    description: >
+      **Grain: one physical unit sold.** The revenue grain. Use for category,
+      brand and product mix analysis; use `fct_orders` for anything counted
+      per order (AOV, order counts) to avoid fan-out.
+    columns:
+      - name: order_item_id
+        tests: [unique, not_null]
+      - name: order_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_orders')
+                field: order_id
+      - name: product_id
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+      - name: net_revenue
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: true
+      - name: net_margin_pct
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -5
+                max_value: 1
+              config:
+                where: "net_margin_pct is not null"
+                severity: warn
+  - name: dim_customers
+    description: >
+      **Grain: one registered customer.** Holds the project's definition of an
+      *active* customer (recognised order within the active window, measured
+      against the warehouse's latest order date rather than CURRENT_DATE) and
+      lifetime value roll-ups. Contains PII (name, email) — restrict these
+      columns in the BI layer.
+    columns:
+      - name: user_id
+        tests: [unique, not_null]
+      - name: customer_status
+        description: Never purchased / Active - new / Active - repeat / Lapsing / Churned.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Never purchased', 'Active - new', 'Active - repeat', 'Lapsing', 'Churned']
+      - name: lifetime_net_revenue
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: true
+      - name: lifetime_orders
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: true
+      - name: lifetime_incomplete_orders
+        description: >
+          Count of this customer's recognised orders that fall inside the
+          ingestion-lag window and whose economics have not landed yet.
+        tests: [not_null]
+      - name: has_incomplete_orders
+        description: >
+          True when any part of this customer's lifetime value is still
+          arriving. Their `lifetime_net_revenue` is a floor, not a final
+          figure -- surface this in the BI layer rather than quoting LTV flat.
+        tests: [not_null]
+      - name: lifetime_orders_missing_economics
+        description: >
+          Recognised orders with no order_items rows at all, so their revenue
+          is unknown rather than late. Distinct from
+          `lifetime_incomplete_orders`, which merely counts orders inside the
+          lag window -- most of those do have their line items.
+        tests: [not_null]
+      - name: avg_order_value
+        description: >
+          Null -- not zero -- when every recognised order is still incomplete.
+          An unknown average and an average of nothing are different claims.
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                inclusive: false
+              config:
+                where: "avg_order_value is not null"
+      - name: is_active
+        description: Recognised order within the last `active_window_days`.
+
+  - name: dim_products
+    description: >
+      **Grain: one product SKU.** Catalogue attributes plus inventory-derived
+      sell-through and average landed cost.
+    columns:
+      - name: product_id
+        tests: [unique, not_null]
+      - name: sku
+        tests: [not_null]
+      - name: price_tier
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Budget (<$25)', 'Mid ($25-$75)', 'Premium ($75-$200)', 'Luxury ($200+)']
+      - name: sell_through_rate
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+              config:
+                where: "sell_through_rate is not null"
+  - name: fct_daily_revenue
+    description: >
+      **Grain: one calendar day.** Date-spined, so zero-order days are present
+      as zeros. Pre-computes 7-day trailing average and a 364-day lag for
+      year-over-year comparison so BI tools do not each re-derive them.
+    columns:
+      - name: is_revenue_complete
+        description: >
+          False for days inside the ingestion-lag window. Dashboards should
+          either filter these out or render them visually distinct -- their
+          revenue will keep rising as line items land.
+        tests: [not_null]
+      - name: revenue_date
+        tests: [unique, not_null]
+      - name: net_revenue
+        tests: [not_null]
+      - name: gross_margin_pct
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -1
+                max_value: 1
+              config:
+                where: "gross_margin_pct is not null"
+      - name: cancellation_rate
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+              config:
+                where: "cancellation_rate is not null"
+  - name: mart_product_performance
+    description: >
+      **Grain: product x month.** Revenue, margin, return rate, in-category
+      rank and share of month revenue.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [revenue_month, product_id]
+    columns:
+      - name: product_id
+        tests: [not_null]
+      - name: revenue_month
+        tests: [not_null]
+
+  # ----------------------------------------------------------- marketing ----
+  - name: mart_customer_cohorts
+    description: >
+      **Grain: cohort month x months-since-first-purchase.** Full grid, so
+      zero-activity periods appear as 0% retained instead of vanishing.
+      Includes a cumulative LTV curve per cohort.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cohort_month, months_since_first_purchase]
+    columns:
+      - name: cohort_month
+        tests: [not_null]
+      - name: retention_rate
+        description: active_customers / cohort_customers. Always 1.0 at offset 0.
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: cohort_customers
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 1
+                inclusive: true
+  - name: mart_acquisition_channels
+    description: >
+      **Grain: registration month x traffic source.** Ties acquisition channel
+      to downstream conversion, repeat rate and lifetime revenue.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [registration_month, traffic_source]
+    columns:
+      - name: conversion_rate
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: customers_acquired
+        tests: [not_null]

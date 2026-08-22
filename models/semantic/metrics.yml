@@ -1,0 +1,190 @@
+version: 2
+
+metrics:
+
+  # --- component metrics -----------------------------------------------------
+  # MetricFlow ratio metrics take *metrics* as numerator/denominator, not
+  # measures, so the building blocks are declared explicitly here.
+
+  - name: cancelled_orders
+    label: Cancelled Orders
+    type: simple
+    type_params:
+      measure: cancelled_order_measure
+
+  - name: returned_orders
+    label: Returned Orders
+    type: simple
+    type_params:
+      measure: returned_order_measure
+
+  - name: repeat_orders
+    label: Repeat Orders
+    description: Orders that were not the customer's first purchase.
+    type: simple
+    type_params:
+      measure: repeat_order_measure
+
+  - name: registered_customers
+    label: Registered Customers
+    type: simple
+    type_params:
+      measure: customer_count_measure
+
+  - name: purchasing_customers_lifetime
+    label: Customers Who Have Purchased (lifetime)
+    description: Customer-grain count of anyone with at least one recognised order.
+    type: simple
+    type_params:
+      measure: purchased_customer_measure
+
+  - name: repeat_customers
+    label: Repeat Customers
+    type: simple
+    type_params:
+      measure: repeat_customer_measure
+
+  - name: lifetime_revenue
+    label: Lifetime Revenue (customer grain)
+    type: simple
+    type_params:
+      measure: lifetime_revenue_measure
+
+  # ------------------------------------------------------------- revenue ----
+  - name: net_revenue
+    label: Net Revenue
+    description: >
+      Revenue from units in a recognised status (Complete, Shipped,
+      Processing). Cancelled and Returned units contribute zero. This is the
+      only definition of revenue in the project — no dashboard should compute
+      its own.
+    type: simple
+    type_params:
+      measure: net_revenue_measure
+
+  - name: gross_profit
+    label: Gross Profit
+    description: Net revenue less true landed cost of the units shipped.
+    type: simple
+    type_params:
+      measure: gross_profit_measure
+
+  - name: gross_margin_pct
+    label: Gross Margin %
+    description: Gross profit as a share of net revenue.
+    type: ratio
+    type_params:
+      numerator: gross_profit
+      denominator: net_revenue
+
+  # -------------------------------------------------------------- volume ----
+  - name: order_count
+    label: Orders
+    description: Count of revenue-recognised orders.
+    type: simple
+    type_params:
+      measure: order_count_measure
+
+  - name: orders_placed
+    label: Orders Placed
+    description: All order attempts, including cancelled ones.
+    type: simple
+    type_params:
+      measure: orders_placed_measure
+
+  - name: units_sold
+    label: Units Sold
+    type: simple
+    type_params:
+      measure: units_sold_measure
+
+  - name: average_order_value
+    label: Average Order Value
+    description: Net revenue divided by recognised orders. The canonical AOV.
+    type: ratio
+    type_params:
+      numerator: net_revenue
+      denominator: order_count
+
+  # --------------------------------------------------------- reliability ----
+  - name: cancellation_rate
+    label: Cancellation Rate
+    description: Cancelled orders as a share of all order attempts.
+    type: ratio
+    type_params:
+      numerator: cancelled_orders
+      denominator: orders_placed
+
+  - name: return_rate
+    label: Return Rate
+    description: Returned orders as a share of all order attempts.
+    type: ratio
+    type_params:
+      numerator: returned_orders
+      denominator: orders_placed
+
+  # ------------------------------------------------------------ customer ----
+  - name: purchasing_customers
+    label: Purchasing Customers
+    description: Distinct customers who placed an order in the period.
+    type: simple
+    type_params:
+      measure: purchasing_customers_measure
+
+  - name: repeat_purchase_rate
+    label: Repeat Purchase Rate
+    description: >
+      Share of orders in the period that were not the customer's first
+      purchase. Note this is an order-weighted definition; the customer-weighted
+      version is `repeat_customer_rate`.
+    type: ratio
+    type_params:
+      numerator: repeat_orders
+      denominator: order_count
+
+  - name: repeat_customer_rate
+    label: Repeat Customer Rate
+    description: >
+      Share of purchasing customers who have bought more than once, lifetime.
+      Customer-weighted counterpart to `repeat_purchase_rate`.
+    type: ratio
+    type_params:
+      numerator: repeat_customers
+      denominator: purchasing_customers_lifetime
+
+  - name: conversion_rate
+    label: Registration to Purchase Conversion
+    description: Share of registered customers who ever completed a purchase.
+    type: ratio
+    type_params:
+      numerator: purchasing_customers_lifetime
+      denominator: registered_customers
+
+  - name: active_customers
+    label: Active Customers
+    description: Customers with a recognised order in the last 90 days.
+    type: simple
+    type_params:
+      measure: active_customer_measure
+
+  - name: lifetime_value_per_customer
+    label: LTV per Customer
+    description: Lifetime net revenue divided by purchasing customers.
+    type: ratio
+    type_params:
+      numerator: lifetime_revenue
+      denominator: purchasing_customers_lifetime
+
+  # ------------------------------------------------------------- derived ----
+  - name: net_revenue_mom_growth
+    label: Net Revenue MoM Growth %
+    description: Month-over-month change in net revenue.
+    type: derived
+    type_params:
+      expr: (current_revenue - prior_revenue) / nullif(prior_revenue, 0)
+      metrics:
+        - name: net_revenue
+          alias: current_revenue
+        - name: net_revenue
+          offset_window: 1 month
+          alias: prior_revenue

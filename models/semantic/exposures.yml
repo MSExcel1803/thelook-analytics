@@ -1,0 +1,54 @@
+version: 2
+
+# Exposures make the BI layer part of the lineage graph, so `dbt build -s
+# +exposure:executive_revenue_overview` rebuilds exactly what a dashboard
+# depends on, and a failing test tells you which dashboard is now suspect.
+
+exposures:
+
+  - name: executive_revenue_overview
+    label: Executive Revenue Overview
+    type: dashboard
+    maturity: high
+    url: https://REPLACE_WITH_DASHBOARD_URL
+    description: >
+      Top-line revenue, gross margin, AOV and order volume with 7-day
+      smoothing and year-over-year comparison. Reads the metrics layer.
+    depends_on:
+      - ref('fct_daily_revenue')
+      - ref('fct_orders')
+    owner:
+      name: Harsh Sahu
+      email: harshsahu2183@gmail.com
+
+  - name: customer_cohort_analysis
+    label: Customer Cohort & Retention
+    type: dashboard
+    maturity: high
+    url: https://REPLACE_WITH_DASHBOARD_URL
+    description: >
+      Retention triangle, cumulative LTV curves by cohort, and acquisition
+      channel quality.
+    depends_on:
+      - ref('mart_customer_cohorts')
+      - ref('mart_acquisition_channels')
+      - ref('dim_customers')
+    owner:
+      name: Harsh Sahu
+      email: harshsahu2183@gmail.com
+
+  - name: product_performance
+    label: Product & Category Performance
+    type: dashboard
+    maturity: medium
+    url: https://REPLACE_WITH_DASHBOARD_URL
+    description: >
+      Revenue and margin by category, brand and price tier; return rates;
+      in-category rankings and share of month revenue.
+    depends_on:
+      - ref('mart_product_performance')
+      - ref('dim_products')
+      - ref('fct_order_items')
+    owner:
+      name: Harsh Sahu
+      email: harshsahu2183@gmail.com

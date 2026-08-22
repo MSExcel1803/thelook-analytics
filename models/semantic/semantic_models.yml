@@ -1,0 +1,178 @@
+version: 2
+
+# ---------------------------------------------------------------------------
+# SEMANTIC LAYER (dbt MetricFlow)
+#
+# This is the layer most portfolio projects skip. Its job: define "revenue",
+# "AOV" and "repeat purchase rate" exactly once, so Power BI, Tableau, an
+# ad-hoc notebook and a future LLM agent all resolve them identically.
+#
+# Requires dbt-core >= 1.6 (or dbt Cloud on the "Versionless"/latest track).
+# Query with:  dbt sl query --metrics net_revenue --group-by metric_time__month
+# ---------------------------------------------------------------------------
+
+semantic_models:
+
+  - name: orders
+    description: Order-grain semantic model. The primary source of revenue metrics.
+    model: ref('fct_orders')
+    defaults:
+      agg_time_dimension: ordered_date
+
+    entities:
+      - name: order
+        type: primary
+        expr: order_id
+      - name: customer
+        type: foreign
+        expr: user_id
+
+    dimensions:
+      - name: ordered_date
+        type: time
+        type_params:
+          time_granularity: day
+      - name: order_status
+        type: categorical
+      - name: is_revenue_recognised
+        type: categorical
+      - name: is_revenue_complete
+        type: categorical
+      - name: is_first_purchase
+        type: categorical
+      - name: is_repeat_purchase
+        type: categorical
+      - name: cohort_month
+        type: time
+        type_params:
+          time_granularity: month
+
+    measures:
+      - name: net_revenue_measure
+        description: Sum of revenue excluding cancelled and returned units.
+        expr: net_revenue
+        agg: sum
+      - name: gross_profit_measure
+        expr: net_gross_profit
+        agg: sum
+      - name: cogs_measure
+        expr: net_cogs
+        agg: sum
+      - name: order_count_measure
+        description: Orders that count toward revenue.
+        expr: case when is_revenue_recognised then 1 else 0 end
+        agg: sum
+      - name: orders_placed_measure
+        description: All order attempts, including cancelled.
+        expr: 1
+        agg: sum
+      - name: cancelled_order_measure
+        expr: case when is_cancelled then 1 else 0 end
+        agg: sum
+      - name: returned_order_measure
+        expr: case when is_returned then 1 else 0 end
+        agg: sum
+      - name: repeat_order_measure
+        expr: case when is_repeat_purchase then 1 else 0 end
+        agg: sum
+      - name: purchasing_customers_measure
+        expr: user_id
+        agg: count_distinct
+      - name: units_sold_measure
+        expr: units_sold
+        agg: sum
+
+  - name: customers
+    description: Customer-grain semantic model for LTV and activity metrics.
+    model: ref('dim_customers')
+    defaults:
+      agg_time_dimension: registered_date
+
+    entities:
+      - name: customer
+        type: primary
+        expr: user_id
+
+    dimensions:
+      - name: registered_date
+        type: time
+        type_params:
+          time_granularity: day
+      - name: cohort_month
+        type: time
+        type_params:
+          time_granularity: month
+      - name: traffic_source
+        type: categorical
+      - name: country
+        type: categorical
+      - name: age_band
+        type: categorical
+      - name: gender
+        type: categorical
+      - name: customer_status
+        type: categorical
+      - name: is_active
+        type: categorical
+
+    measures:
+      - name: customer_count_measure
+        expr: 1
+        agg: sum
+      - name: active_customer_measure
+        expr: case when is_active then 1 else 0 end
+        agg: sum
+      - name: purchased_customer_measure
+        expr: case when has_purchased then 1 else 0 end
+        agg: sum
+      - name: repeat_customer_measure
+        expr: case when is_repeat_customer then 1 else 0 end
+        agg: sum
+      - name: lifetime_revenue_measure
+        expr: lifetime_net_revenue
+        agg: sum
+
+  - name: order_items
+    description: Unit-grain semantic model for product and category mix.
+    model: ref('fct_order_items')
+    defaults:
+      agg_time_dimension: ordered_date
+
+    entities:
+      - name: order_item
+        type: primary
+        expr: order_item_id
+      - name: order
+        type: foreign
+        expr: order_id
+      - name: product
+        type: foreign
+        expr: product_id
+
+    dimensions:
+      - name: ordered_date
+        type: time
+        type_params:
+          time_granularity: day
+      - name: category
+        type: categorical
+      - name: department
+        type: categorical
+      - name: brand
+        type: categorical
+      - name: item_status
+        type: categorical
+
+    measures:
+      - name: item_revenue_measure
+        expr: net_revenue
+        agg: sum
+      - name: item_units_measure
+        expr: net_units
+        agg: sum
+      - name: returned_units_measure
+        expr: case when is_returned then 1 else 0 end
+        agg: sum
+      - name: line_item_measure
+        expr: 1
+        agg: sum

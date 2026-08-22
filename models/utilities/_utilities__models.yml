@@ -1,0 +1,23 @@
+version: 2
+
+models:
+  - name: metricflow_time_spine
+    description: >
+      Gapless daily calendar spanning the analysis window. Required by
+      MetricFlow to anchor `metric_time` so that periods with no activity
+      render as zero rather than vanishing from the result set.
+    time_spine:
+      standard_granularity_column: date_day
+    columns:
+      - name: date_day
+        description: Calendar day. Primary key of the spine.
+        granularity: day
+        tests: [unique, not_null]
+      - name: date_week
+        description: Monday-anchored start of the ISO week containing date_day.
+      - name: date_month
+        description: First day of the calendar month containing date_day.
+      - name: date_quarter
+        description: First day of the calendar quarter containing date_day.
+      - name: date_year
+        description: First day of the calendar year containing date_day.

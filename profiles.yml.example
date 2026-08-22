@@ -1,0 +1,26 @@
+# Copy to ~/.dbt/profiles.yml and fill in.
+# dbt Cloud users configure this in the UI instead and can ignore this file.
+thelook_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: service-account
+      project: YOUR_GCP_PROJECT_ID          # your billing project
+      dataset: dbt_harsh                    # your personal dev dataset
+      keyfile: /absolute/path/to/keyfile.json
+      threads: 8
+      location: US                          # thelook_ecommerce lives in US
+      timeout_seconds: 300
+      priority: interactive
+
+    prod:
+      type: bigquery
+      method: service-account
+      project: YOUR_GCP_PROJECT_ID
+      dataset: analytics
+      keyfile: /absolute/path/to/keyfile.json
+      threads: 8
+      location: US
+      timeout_seconds: 600
+      priority: batch

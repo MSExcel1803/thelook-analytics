@@ -1,0 +1,20 @@
+version: 2
+
+models:
+  - name: int_order_items_enriched
+    description: >
+      Revenue-grain building block. Joins order items to the inventory unit that
+      shipped (for true COGS) and to the product catalogue (for category/brand),
+      then splits gross vs. net revenue according to the project-wide revenue
+      status definition. Ephemeral — it exists to keep the marts readable, not
+      to be queried directly.
+
+  - name: int_orders_aggregated
+    description: >
+      Line-item economics rolled up to the order grain. Ephemeral.
+
+  - name: int_customer_order_history
+    description: >
+      Per-customer order sequencing, cohort assignment, and repeat-purchase
+      flags. Cohort month is the month of the first revenue-recognised order.
+      Ephemeral.
