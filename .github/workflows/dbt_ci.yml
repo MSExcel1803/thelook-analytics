@@ -31,7 +31,14 @@ jobs:
       - name: Install dbt
         run: |
           python -m pip install --upgrade pip
-          pip install "dbt-bigquery~=1.9.0" sqlfluff sqlfluff-templater-dbt
+          pip install -r requirements.txt
+
+      # Kept separate and non-fatal on purpose: sqlfluff-templater-dbt pins its
+      # own dbt-core range and can refuse to resolve against a newer adapter.
+      # A linter that will not install must not take the build down with it.
+      - name: Install lint tooling
+        continue-on-error: true
+        run: pip install sqlfluff sqlfluff-templater-dbt
 
       - name: Write service account keyfile
         run: |
@@ -85,8 +92,12 @@ jobs:
             target/catalog.json
             target/index.html
 
+      # Requires bigquery.datasets.delete, which roles/bigquery.dataEditor does
+      # NOT grant -- only dataOwner does. Non-fatal so a missing permission
+      # cannot turn an otherwise-passing build red; see README for the fix.
       - name: Tear down CI dataset
         if: always()
+        continue-on-error: true
         run: |
           pip install google-cloud-bigquery
           python - <<'PY'

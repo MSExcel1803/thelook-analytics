@@ -1,0 +1,4 @@
+# Pinned so local dev and CI install the same adapter. dbt-bigquery pulls in a
+# matching dbt-core. Must stay >=1.10 -- this project uses the `arguments:`
+# test syntax and a `time_spine` config, neither of which parses on older dbt.
+dbt-bigquery~=1.12.0
