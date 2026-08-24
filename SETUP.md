@@ -23,7 +23,7 @@ select count(*) as order_items
 from `bigquery-public-data.thelook_ecommerce.order_items`;
 ```
 
-You should get roughly 2 million rows. Public dataset queries are billed to
+You should get 181,758 rows. Public dataset queries are billed to
 *your* project, so this counts against your free tier — it is a trivial amount.
 
 ---
@@ -79,7 +79,7 @@ Expect on a first run:
 
 - 7 staging views, 3 ephemeral (no objects created), 8 mart tables
 - 128 tests
-- 2–4 minutes wall clock
+- ~76 seconds wall clock locally (8 threads); ~2m30s on a cold CI runner
 
 If the `relationships` test on `stg_thelook__order_items.inventory_item_id`
 warns, that is the source data, not your code — a small number of order items
@@ -135,7 +135,14 @@ Then fill in the real dashboard URLs in `models/semantic/exposures.yml`.
 
 ## Cost control
 
-- The free tier resets monthly; this project's full build scans well under 5 GB.
+- **Measured cost of one full build:** 144 query jobs, **0.53 GiB processed** but
+  **1.51 GiB billed** — roughly 0.15% of the 1 TB monthly free tier. You could run
+  this pipeline ~660 times a month for free.
+- **Why billed is 3x processed:** BigQuery bills a minimum of 10 MB per query. A
+  build that is mostly 128 small test queries pays that floor over and over, so
+  the bill is driven by job *count*, not data volume. This is the cost shape of a
+  well-tested dbt project, and it is why `--select` matters more than table size
+  when you are iterating.
 - `dbt build --select staging` while iterating avoids rebuilding marts.
 - BigQuery console shows estimated bytes scanned before you run a query — get
   in the habit of reading it.
