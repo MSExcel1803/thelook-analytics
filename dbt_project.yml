@@ -34,6 +34,28 @@ vars:
   # orphan order has dragged the boundary backwards across good data. Being
   # slightly wrong about this number is cheap; being wrong about a hard-coded
   # cutoff was not.
+  # DISCOVERED 2026-09-07: the source does not merely lag, it REWRITES HISTORY.
+  # A mart built 2026-08-24 recorded 1,733 orders on 2026-08-23; queried on
+  # 2026-09-07 the same source day held 236. Days near the write point are
+  # inflated up to 7x and later settle to a ~220/day baseline. Even days well
+  # outside any lag window moved (Aug 14: 258 -> 199).
+  #
+  # So the trailing edge is wrong in BOTH directions: missing line items AND
+  # phantom orders. The line-item check cannot see the phantoms -- a day can
+  # have every line item present and still carry 2.5x its true volume.
+  #
+  # Back the derived boundary off by this many further days so the inflated
+  # region is excluded too. A margin on top of a derived boundary, not a
+  # boundary of its own -- being wrong here costs a little recency, not
+  # correctness.
+  completeness_settling_days: 3
+
+  # A "complete" day whose order volume exceeds this multiple of its trailing
+  # 28-day average is not plausible; it is the inflation artifact leaking past
+  # the buffer. Guards the settling_days value from going stale.
+  volume_anomaly_multiple: 2.0
+  volume_anomaly_floor: 0.35
+
   max_completeness_window_days: 14
   # Order item statuses that count toward recognised revenue
   revenue_statuses: ['Complete', 'Shipped', 'Processing']
@@ -65,6 +87,3 @@ models:
       marketing:
         +schema: marketing
 
-seeds:
-  thelook_analytics:
-    +schema: seeds

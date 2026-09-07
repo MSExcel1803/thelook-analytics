@@ -78,7 +78,7 @@ model from being built on data that just failed a test.
 Expect on a first run:
 
 - 7 staging views, 3 ephemeral (no objects created), 8 mart tables
-- 128 tests
+- 129 tests
 - ~76 seconds wall clock locally (8 threads); ~2m30s on a cold CI runner
 
 If the `relationships` test on `stg_thelook__order_items.inventory_item_id`

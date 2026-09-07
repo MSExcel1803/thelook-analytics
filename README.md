@@ -144,7 +144,7 @@ reconciliation test enforces that the two agree on revenue.
 
 ## Data quality
 
-**128 automated tests** across three kinds:
+**129 automated tests** across three kinds:
 
 **Schema tests** — `unique`, `not_null`, `accepted_values`, `relationships`
 (true foreign-key enforcement, which BigQuery does not provide), and
