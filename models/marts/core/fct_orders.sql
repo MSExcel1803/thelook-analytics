@@ -45,9 +45,15 @@ completeness as (
         generator cannot silently move the goalposts.
     */
     select
-        coalesce(
-            date_sub(f.first_incomplete_date, interval 1 day),
-            (select max(ordered_date) from orders)   -- no gaps at all
+        date_sub(
+            coalesce(
+                date_sub(f.first_incomplete_date, interval 1 day),
+                (select max(ordered_date) from orders)   -- no gaps at all
+            ),
+            -- The settling buffer. The gap-derived boundary only knows about
+            -- MISSING line items; it cannot see PHANTOM orders, which inflate
+            -- the same trailing region and settle later. See dbt_project.yml.
+            interval {{ var('completeness_settling_days') }} day
         ) as complete_through
     from first_gap f
 
