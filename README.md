@@ -12,7 +12,9 @@ that runs data quality tests on every pull request**.
 | **Source** | `bigquery-public-data.thelook_ecommerce` — 7 tables, 181,758 order items |
 | **Layers** | sources → staging → intermediate → marts → semantic |
 | **Testing** | schema tests + custom singular tests, run in CI |
-| **BI** | Tableau Public, connected to marts only |
+| **BI** | Looker Studio — live BigQuery connection, marts only |
+
+**▶ [Live dashboard](https://datastudio.google.com/reporting/0da2de4e-db5a-4410-8bcb-66727bda1e26)** — three pages, reading the production marts.
 
 ---
 
@@ -90,7 +92,7 @@ bigquery-public-data.thelook_ecommerce   (sources + freshness checks)
     └──────────────────────────┘
                 │
                 ▼
-      Tableau Public  (declared as dbt exposures)
+      Looker Studio  (declared as dbt exposures)
 ```
 
 ---
@@ -239,13 +241,48 @@ All three read **marts and the metrics layer only** — never raw sources — an
 are declared as dbt `exposures`, so they appear in the lineage graph and can be
 selected in a build.
 
-1. **Executive Revenue Overview** — net revenue, gross margin, AOV, order
-   volume; 7-day trailing average and year-over-year comparison precomputed in
-   `fct_daily_revenue`.
-2. **Customer Cohort & Retention** — retention triangle, cumulative LTV curves,
-   acquisition channel quality.
-3. **Product & Category Performance** — revenue and margin by category, brand
-   and price tier; return rates; in-category ranking.
+**▶ [Open the live dashboard](https://datastudio.google.com/reporting/0da2de4e-db5a-4410-8bcb-66727bda1e26)**
+
+**1. Executive Revenue** — net revenue, gross margin, AOV and order volume, with
+the 7-day trailing average precomputed in `fct_daily_revenue`. Daily revenue has
+risen from roughly $10K to $16K since June; cancellations run ~15%, returns ~10%.
+
+![Executive Revenue dashboard](docs/dashboard-executive.png)
+
+**2. Customer Cohorts** — retention triangle and cumulative LTV curves by
+quarterly cohort. Month-1 retention runs 3–10% and flattens fast: customers reach
+~$85–90 on their first order and only ~$126 after two years, so **nearly all
+customer value is the first purchase**.
+
+![Customer Cohorts dashboard](docs/dashboard-cohorts.png)
+
+**3. Product & Channel** — category revenue, a margin-vs-returns scatter, top
+products, and acquisition channel performance. Categories cluster at 40–60%
+margin and 12–15% returns with no outliers, and all five channels fall within
+3 points of each other on every measure — **acquisition source does not predict
+customer value in this dataset**.
+
+![Product & Channel dashboard](docs/dashboard-product-channel.png)
+
+Rates in the BI layer are computed as `SUM(numerator)/SUM(denominator)` rather
+than averaged, so a product that sold 2 units does not weigh the same as one that
+sold 2,000.
+
+---
+
+## Limitations
+
+**No orchestration.** The marts are tables and Looker Studio reads the table, not
+the source, caching for 12 hours. The dashboards are only as fresh as the last
+`dbt build` — there is no scheduler. A two-week-old mart once rendered a 2.5x
+revenue spike that had never been real, because the source rewrites history: days
+near the write point carry inflated order counts that settle later. That is what
+`completeness_settling_days` and `assert_complete_days_have_plausible_volume`
+exist to contain.
+
+**Source misclassifications pass through.** "The North Face Apex Bionic Soft Shell
+Jacket" is categorised under *Fashion Hoodies & Sweatshirts* upstream. The pipeline
+reports it faithfully rather than silently correcting it.
 
 ---
 
